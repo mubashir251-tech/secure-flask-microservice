@@ -55,10 +55,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y trivy
 
+      - name: Export image for Trivy
+        run: |
+          podman save \
+            -o secure-flask-microservice.tar \
+            localhost/secure-flask-microservice:ci
+
       - name: Trivy vulnerability scan
         run: |
           trivy image \
+            --input secure-flask-microservice.tar \
             --scanners vuln \
             --severity HIGH,CRITICAL \
-            --ignore-unfixed \
-            localhost/secure-flask-microservice:ci
+            --ignore-unfixed
