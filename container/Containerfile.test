@@ -1,0 +1,16 @@
+FROM localhost/secure-flask-microservice:dev
+
+USER root
+
+COPY tests/requirements.txt /tmp/test-requirements.txt
+
+RUN pip install --no-cache-dir -r /tmp/test-requirements.txt \
+    && rm -f /tmp/test-requirements.txt
+
+ENV PYTHONPATH=/app
+
+COPY tests/ /tests/
+
+WORKDIR /tests
+
+CMD ["python", "-m", "pytest", "-q"]

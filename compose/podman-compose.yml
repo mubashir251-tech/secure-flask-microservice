@@ -1,0 +1,52 @@
+version: "3.8"
+
+services:
+
+  db:
+    image: docker.io/library/postgres:15-alpine
+    environment:
+      POSTGRES_DB: mydb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ../database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d mydb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - app-network
+
+  web:
+    build:
+      context: ..
+      dockerfile: container/Containerfile
+    image: localhost/secure-flask-microservice:dev
+    environment:
+      DB_HOST: db
+      DB_NAME: mydb
+      DB_USER: postgres
+    secrets:
+      - db_password
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "5000:5000"
+    networks:
+      - app-network
+
+volumes:
+  pgdata:
+
+secrets:
+  db_password:
+    external: true
+
+networks:
+  app-network:
+    driver: bridge

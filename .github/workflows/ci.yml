@@ -1,0 +1,63 @@
+name: Secure Flask Microservice CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-scan:
+    name: Test and Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Podman
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+
+      - name: Build production image
+        run: |
+          podman build \
+            -t localhost/secure-flask-microservice:ci \
+            -f container/Containerfile .
+
+      - name: Build test image
+        run: |
+          podman build \
+            -t localhost/secure-flask-microservice:test \
+            -f container/Containerfile.test .
+
+      - name: Run automated tests
+        run: |
+          podman run --rm \
+            localhost/secure-flask-microservice:test
+
+      - name: Install Trivy
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget gnupg
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key \
+            | gpg --dearmor \
+            | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
+          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" \
+            | sudo tee /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install -y trivy
+
+      - name: Trivy vulnerability scan
+        run: |
+          trivy image \
+            --scanners vuln \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            localhost/secure-flask-microservice:ci
