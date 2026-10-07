@@ -34,6 +34,7 @@ jobs:
       - name: Build test image
         run: |
           podman build \
+            --build-arg BASE_IMAGE=localhost/secure-flask-microservice:ci \
             -t localhost/secure-flask-microservice:test \
             -f container/Containerfile.test .
 

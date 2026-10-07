@@ -1,4 +1,5 @@
-FROM localhost/secure-flask-microservice:dev
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
 
 USER root
 
