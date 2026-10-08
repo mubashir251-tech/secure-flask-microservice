@@ -1,149 +1,518 @@
 # 🔐 Secure Flask Microservice Platform
 
-> **Production-style containerized Flask + PostgreSQL microservice deployed with Podman, with security hardening, secret management, persistent storage, health checks, resource controls, vulnerability scanning, observability, and recovery testing.**
+> **Production-style Flask + PostgreSQL microservice secured with Podman, runtime secrets, least-privilege containers, vulnerability scanning, SBOM generation, image signing, automated tests, and GitHub Actions CI.**
 
-[![Python](https://img.shields.io/badge/Python-3.9-blue?logo=python)](https://www.python.org/)
-[![Flask](https://img.shields.io/badge/Flask-API-black?logo=flask)](https://flask.palletsprojects.com/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15%2B-blue?logo=postgresql)](https://www.postgresql.org/)
+[![Python](https://img.shields.io/badge/Python-3.12-blue?logo=python)](https://www.python.org/)
+[![Flask](https://img.shields.io/badge/Flask-3.1-black?logo=flask)](https://flask.palletsprojects.com/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-blue?logo=postgresql)](https://www.postgresql.org/)
 [![Podman](https://img.shields.io/badge/Container-Podman-purple?logo=podman)](https://podman.io/)
-[![Security](https://img.shields.io/badge/Security-Trivy-red?logo=aquasecurity)](https://trivy.dev/)
+[![Trivy](https://img.shields.io/badge/Security-Trivy-red?logo=aquasecurity)](https://trivy.dev/)
 [![CI](https://img.shields.io/badge/CI-GitHub%20Actions-black?logo=githubactions)](https://github.com/features/actions)
 
 ---
 
 ## 📌 Project Overview
 
-This project demonstrates how to design, secure, deploy, troubleshoot, and operate a **multi-container Flask microservice** backed by PostgreSQL.
+This project demonstrates how to **build, secure, test, scan, sign, deploy, troubleshoot, and operate a multi-container Flask microservice** backed by PostgreSQL.
 
-The project is intentionally designed around a realistic business scenario rather than a simple container tutorial.
+It is intentionally designed as an engineering project rather than a basic Flask or container tutorial.
 
-### 🎯 Business Scenario
+### Business Scenario
 
-A small business needs a backend API that must:
+A small business needs an internal/backend API that must:
 
 - Run reliably in containers
 - Store application data persistently
 - Protect database credentials
-- Prevent unnecessary root access
-- Detect vulnerable container dependencies
-- Wait for PostgreSQL to become ready
-- Recover from database interruptions
-- Control CPU and memory consumption
-- Provide useful logs for troubleshooting
-- Be reproducible through infrastructure configuration
+- Avoid root execution
+- Restrict container privileges
+- Limit CPU and memory consumption
+- Provide health and database-readiness endpoints
+- Detect vulnerable dependencies
+- Generate a software bill of materials
+- Verify container image integrity
+- Support reproducible deployment through Compose
+- Be tested automatically in CI
+- Recover cleanly from service interruptions
 
 ---
 
 # 🏗️ Architecture
 
 ```text
-                              ┌──────────────────┐
-                              │      Client      │
-                              │ Browser / curl    │
-                              └────────┬─────────┘
-                                       │
-                                       │ HTTP
-                                       ▼
-                              ┌──────────────────┐
-                              │      NGINX       │
-                              │ Reverse Proxy    │
-                              └────────┬─────────┘
-                                       │
-                                       │ HTTP :5000
-                                       ▼
-                     ┌────────────────────────────────┐
-                     │          Flask API              │
-                     │                                │
-                     │  • Non-root execution          │
-                     │  • Health checks               │
-                     │  • Environment configuration   │
-                     │  • Secret-file support         │
-                     │  • Database connection         │
-                     └──────────────┬─────────────────┘
-                                    │
-                                    │ PostgreSQL
-                                    │ private network
-                                    ▼
-                     ┌────────────────────────────────┐
-                     │          PostgreSQL             │
-                     │                                │
-                     │  • Healthcheck                 │
-                     │  • Secret password             │
-                     │  • Persistent storage           │
-                     └──────────────┬─────────────────┘
-                                    │
-                                    ▼
-                           ┌─────────────────┐
-                           │ Persistent      │
-                           │ Podman Volume   │
-                           └─────────────────┘
+                         Client
+                           │
+                           │ HTTP
+                           ▼
+              ┌─────────────────────────┐
+              │       Flask API         │
+              │       Gunicorn          │
+              │                         │
+              │  Non-root UID 10001     │
+              │  Read-only filesystem   │
+              │  CAP_DROP=ALL           │
+              │  No-new-privileges      │
+              │  CPU / memory limits    │
+              └────────────┬────────────┘
+                           │
+                           │ PostgreSQL
+                           │ private network
+                           ▼
+              ┌─────────────────────────┐
+              │      PostgreSQL 15      │
+              │                         │
+              │  Healthcheck            │
+              │  Secret password        │
+              │  Persistent volume      │
+              └────────────┬────────────┘
+                           │
+                           ▼
+                    Podman Volume
+```
+
+### Security / Supply-Chain Flow
+
+```text
+Source Code
+    │
+    ▼
+Podman Build
+    │
+    ├──────────────► Automated Tests
+    │
+    ▼
+Container Image
+    │
+    ├──────────────► Trivy Vulnerability Scan
+    │
+    ├──────────────► CycloneDX SBOM
+    │
+    ▼
+Image Registry
+    │
+    ▼
+Cosign Signature
+    │
+    ▼
+Digest-based Verification
+    │
+    ▼
+Deployment
 ```
 
 ---
 
 # 🔒 Security Architecture
 
-```text
-                         Source Code
-                              │
-                              ▼
-                       Container Build
-                              │
-                              ▼
-                    ┌──────────────────┐
-                    │ Vulnerability    │
-                    │ Scan — Trivy     │
-                    └────────┬─────────┘
-                             │
-                    ┌────────┴─────────┐
-                    │                  │
-                 FAIL               PASS
-                    │                  │
-                    ▼                  ▼
-                  STOP            Application
-                                   Testing
-                                      │
-                                      ▼
-                               Image Release
-                                      │
-                                      ▼
-                                  Deployment
-```
+The application container is deliberately hardened using multiple independent controls.
 
-### Security controls implemented
-
-| Control | Implementation |
-|---|---|
-| Least privilege | Flask runs as non-root |
-| Secret management | Podman secrets |
-| Credential protection | No passwords committed to Git |
-| Image security | Trivy vulnerability scanning |
-| Minimal image | Python slim base image |
-| Network isolation | Private application network |
-| Resource protection | CPU / memory limits |
-| Persistence | PostgreSQL named volume |
-| Service readiness | PostgreSQL healthcheck |
-| Failure handling | Application retry logic |
-| Logging | Podman container logs |
-| Recovery testing | Database restart testing |
+| Control | Implementation | Verified |
+|---|---|---|
+| Non-root execution | UID/GID `10001:10001` | ✅ |
+| Secret management | Podman secret | ✅ |
+| No password in source | `db_password` mounted at runtime | ✅ |
+| Minimal base image | `python:3.12-slim-bookworm` | ✅ |
+| CPU limit | `0.5` CPU | ✅ |
+| Memory limit | `256 MB` | ✅ |
+| No privilege escalation | `no-new-privileges` | ✅ |
+| Linux capabilities | `CAP_DROP=ALL` | ✅ |
+| Root filesystem | Read-only | ✅ |
+| Private service network | Podman bridge network | ✅ |
+| PostgreSQL healthcheck | `pg_isready` | ✅ |
+| Application health | `/health` | ✅ |
+| Database readiness | `/ready` | ✅ |
+| Vulnerability scanning | Trivy | ✅ |
+| SBOM | CycloneDX | ✅ |
+| Image signing | Cosign | ✅ |
+| Digest verification | Cosign + immutable digest | ✅ |
+| Automated tests | pytest | ✅ |
+| CI | GitHub Actions | ✅ |
 
 ---
 
-# 🧰 Technology Stack
+# 🛡️ Runtime Container Hardening
 
-| Layer | Technology |
-|---|---|
-| Application | Python 3.9 / Flask |
-| Database | PostgreSQL |
-| Container Runtime | Podman |
-| Multi-container Deployment | Podman Compose |
-| Container Networking | Podman bridge network |
-| Persistence | Podman named volume |
-| Secrets | Podman Secrets |
-| Vulnerability Scanner | Trivy |
-| Testing | pytest / curl |
-| CI/CD | GitHub Actions |
-| Host OS | Ubuntu Linux |
+The Flask container currently runs with:
+
+```text
+User             10001:10001
+Memory           256 MB
+CPU              0.5
+Read-only root   true
+No-new-privs     enabled
+Capabilities     dropped
+```
+
+Verified runtime configuration:
+
+```bash
+podman inspect compose_web_1 \
+  --format 'User={{.Config.User}} Memory={{.HostConfig.Memory}} CPUs={{.HostConfig.NanoCpus}} Readonly={{.HostConfig.ReadonlyRootfs}} Security={{json .HostConfig.SecurityOpt}} CapDrop={{json .HostConfig.CapDrop}}'
+```
+
+Example verified result:
+
+```text
+User=10001:10001
+Memory=268435456
+CPUs=500000000
+Readonly=true
+Security=["no-new-privileges"]
+CapDrop=["CAP_CHOWN","CAP_DAC_OVERRIDE","CAP_FOWNER","CAP_FSETID","CAP_KILL","CAP_NET_BIND_SERVICE","CAP_SETFCAP","CAP_SETGID","CAP_SETPCAP","CAP_SETUID","CAP_SYS_CHROOT"]
+```
+
+### Why these controls matter
+
+**Non-root**
+
+The application does not run as root, reducing the impact of a container compromise.
+
+**Read-only filesystem**
+
+The container root filesystem cannot be modified during normal runtime.
+
+**No-new-privileges**
+
+Processes cannot gain additional privileges through privilege-escalation mechanisms.
+
+**Capability dropping**
+
+The application does not require the default Linux capabilities, so they are explicitly removed.
+
+**Resource limits**
+
+CPU and memory limits reduce the impact of runaway application processes and resource exhaustion.
+
+---
+
+# 🔑 Secret Management
+
+The database password is provided through a Podman secret rather than being embedded in the application image.
+
+```text
+                    Podman Secret
+                         │
+                         ▼
+                 /run/secrets/db_password
+                    │             │
+                    ▼             ▼
+               PostgreSQL       Flask
+```
+
+The Flask application supports the secret-file pattern:
+
+```text
+/run/secrets/db_password
+```
+
+and falls back to an environment variable for local development.
+
+### Security rule
+
+Never commit:
+
+```text
+.env
+password files
+private keys
+certificates
+credentials
+```
+
+to Git.
+
+---
+
+# 🧪 Application
+
+The service is implemented with:
+
+- Python 3.12
+- Flask 3.1.3
+- Gunicorn 22.0.0
+- PostgreSQL 15
+- psycopg2-binary 2.9.9
+
+## API Endpoints
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/` | GET | Basic application status |
+| `/health` | GET | Application health |
+| `/ready` | GET | PostgreSQL readiness |
+| `/data` | GET | PostgreSQL version/connectivity |
+| `/users` | GET | Retrieve application users |
+
+### Health
+
+```bash
+curl http://localhost:5001/health
+```
+
+Expected:
+
+```json
+{
+  "service": "secure-flask-microservice",
+  "status": "healthy"
+}
+```
+
+### Readiness
+
+```bash
+curl http://localhost:5001/ready
+```
+
+Expected:
+
+```json
+{
+  "database": "available",
+  "status": "ready"
+}
+```
+
+### Users
+
+```bash
+curl http://localhost:5001/users
+```
+
+The endpoint returns the users stored in PostgreSQL.
+
+---
+
+# 🗄️ PostgreSQL
+
+PostgreSQL is deployed as a separate container on the private Podman network.
+
+```text
+Flask
+  │
+  │ db:5432
+  ▼
+PostgreSQL
+  │
+  ▼
+compose_pgdata
+```
+
+The named volume allows database data to survive container recreation.
+
+Database initialization is handled by:
+
+```text
+database/init.sql
+```
+
+The initialization script creates the `users` table and inserts a demo user when required.
+
+---
+
+# ❤️ Health Checks and Dependencies
+
+PostgreSQL uses:
+
+```bash
+pg_isready -U postgres -d mydb
+```
+
+The Compose deployment uses the database health state before starting the web service.
+
+The readiness endpoint independently tests the actual PostgreSQL connection.
+
+This separates two important concepts:
+
+```text
+/health
+   │
+   └── Is the application process alive?
+
+/ready
+   │
+   └── Can the application reach PostgreSQL?
+```
+
+---
+
+# 🧪 Automated Testing
+
+The project includes pytest tests covering:
+
+- Application availability
+- Health endpoint
+- Database readiness failure handling
+- Database connectivity failure handling
+- User query failure handling
+
+Run tests using the dedicated test image:
+
+```bash
+podman build \
+  -f container/Containerfile \
+  -t localhost/secure-flask-microservice:ci .
+```
+
+```bash
+podman build \
+  --build-arg BASE_IMAGE=localhost/secure-flask-microservice:ci \
+  -t localhost/secure-flask-microservice:test \
+  -f container/Containerfile.test .
+```
+
+```bash
+podman run --rm \
+  localhost/secure-flask-microservice:test
+```
+
+Current verified result:
+
+```text
+5 passed
+```
+
+The production image does not contain pytest.
+
+---
+
+# 🔍 Vulnerability Scanning
+
+Trivy is used to scan the production image.
+
+CI exports the rootless Podman image to an archive before scanning:
+
+```bash
+podman save \
+  -o secure-flask-microservice.tar \
+  localhost/secure-flask-microservice:ci
+```
+
+Then Trivy scans the archive:
+
+```bash
+trivy image \
+  --input secure-flask-microservice.tar \
+  --scanners vuln \
+  --severity HIGH,CRITICAL \
+  --ignore-unfixed
+```
+
+### Current scan status
+
+The final production image was scanned with Trivy using HIGH and CRITICAL severity levels with unfixed vulnerabilities ignored.
+
+**Result: 0 HIGH/CRITICAL vulnerabilities detected.**
+
+The final scan covered:
+
+- Debian 12.15 base OS
+- Flask
+- Gunicorn
+- psycopg2-binary
+- Jinja2
+- Werkzeug
+- Other installed Python runtime dependencies
+
+The production image also removes `pip` after dependency installation, reducing unnecessary runtime tooling and eliminating the previously detected vulnerabilities associated with pip-vendored packages.
+
+This demonstrates an important security engineering principle:
+
+> A security scan is evidence, not a decorative badge. Findings must be reviewed, tracked, and remediated according to risk and availability of fixes.
+
+---
+
+# 📦 Software Bill of Materials
+
+The CI pipeline generates a CycloneDX SBOM:
+
+```bash
+trivy image \
+  --input secure-flask-microservice.tar \
+  --format cyclonedx \
+  --output sbom.cdx.json
+```
+
+The SBOM is uploaded to GitHub Actions as a build artifact.
+
+It provides visibility into the software components contained in the image and supports future dependency and vulnerability management.
+
+---
+
+# ✍️ Image Signing and Verification
+
+Cosign is used to demonstrate container image signing and verification.
+
+The project uses a local OCI registry for the signing lab:
+
+```text
+localhost:5000
+```
+
+The image is pushed to the registry and signed using Cosign.
+
+Verification is performed using the public key.
+
+### Strong verification model
+
+The project also verifies the image using its immutable digest rather than relying only on a mutable tag.
+
+Conceptually:
+
+```text
+Image Tag
+   │
+   ▼
+Registry Manifest
+   │
+   ▼
+Immutable Digest
+   │
+   ▼
+Cosign Signature
+   │
+   ▼
+Public-Key Verification
+```
+
+### Important limitation
+
+The current signing setup is a **local security demonstration**, not a production trust architecture.
+
+Production deployment should move toward:
+
+- TLS-enabled trusted registry
+- protected signing keys
+- CI-controlled signing
+- keyless Sigstore workflows where appropriate
+- signature verification as a deployment policy
+
+---
+
+# 🏗️ Container Build
+
+Production image:
+
+```text
+container/Containerfile
+```
+
+The image uses:
+
+```text
+python:3.12-slim-bookworm
+```
+
+The application is installed with pinned dependencies and served using Gunicorn.
+
+The container creates:
+
+```text
+appgroup → GID 10001
+appuser  → UID 10001
+```
+
+The production container therefore does not require root privileges.
 
 ---
 
@@ -161,30 +530,18 @@ secure-flask-microservice/
 │
 ├── container/
 │   ├── Containerfile
-│   └── entrypoint.sh
+│   └── Containerfile.test
 │
 ├── compose/
 │   └── podman-compose.yml
 │
-├── security/
-│   └── README.md
-│
 ├── tests/
-│   └── README.md
-│
-├── scripts/
-│   └── README.md
-│
-├── docs/
-│   ├── architecture.md
-│   ├── deployment.md
-│   └── troubleshooting.md
-│
-├── screenshots/
-│   └── deployment-evidence/
+│   ├── requirements.txt
+│   └── test_app.py
 │
 ├── .github/
 │   └── workflows/
+│       └── ci.yml
 │
 ├── .gitignore
 └── README.md
@@ -192,355 +549,25 @@ secure-flask-microservice/
 
 ---
 
-# 🚀 Application Features
+# 🚀 Deployment
 
-## API Endpoints
-
-| Endpoint | Method | Purpose |
-|---|---|---|
-| `/` | GET | Application status |
-| `/health` | GET | Health/readiness check |
-| `/data` | GET | PostgreSQL connectivity test |
-
-### Example
+Create the required external Podman secret before deployment:
 
 ```bash
-curl http://localhost:5000/
+printf '%s' 'YOUR_DATABASE_PASSWORD' | \
+  podman secret create db_password -
 ```
 
-Expected response:
-
-```json
-{
-  "status": "OK",
-  "message": "Flask Microservice Running"
-}
-```
-
-Database connectivity:
-
-```bash
-curl http://localhost:5000/data
-```
-
-Expected response contains the PostgreSQL server version.
-
----
-
-# 🗄️ Database
-
-PostgreSQL provides persistent application storage.
-
-The project uses:
-
-```text
-Flask
-  │
-  │ db:5432
-  ▼
-PostgreSQL
-  │
-  ▼
-Podman Named Volume
-```
-
-The database volume ensures that PostgreSQL data survives container recreation.
-
----
-
-# 🔑 Secret Management
-
-Database credentials are **not stored directly in the application source code**.
-
-Instead:
-
-```text
-Secret
-  │
-  ▼
-Podman Secret
-  │
-  ▼
-/run/secrets/db_password
-  │
-  ├──────────────► PostgreSQL
-  │
-  └──────────────► Flask
-```
-
-This prevents credentials from being committed to Git.
-
-> ⚠️ Never commit `.env`, password files, private keys, or other secrets to this repository.
-
----
-
-# ❤️ Health Checks & Service Dependencies
-
-PostgreSQL uses:
-
-```bash
-pg_isready -U postgres
-```
-
-The application waits for the database to become available before attempting the connection.
-
-The deployment flow is:
-
-```text
-Start PostgreSQL
-      │
-      ▼
-Healthcheck
-      │
-      ▼
-PostgreSQL Ready
-      │
-      ▼
-Start Flask
-      │
-      ▼
-Connect to PostgreSQL
-```
-
-This prevents common startup race conditions.
-
----
-
-# 📊 Resource Management
-
-Containers are tested with explicit resource constraints.
-
-Example:
-
-```bash
-podman update --memory 512m <container>
-```
-
-Resource usage can be inspected using:
-
-```bash
-podman stats
-```
-
-This protects the host from a runaway container consuming excessive memory or CPU.
-
----
-
-# 🔍 Security Scanning
-
-Container images are scanned using **Trivy**.
-
-Example:
-
-```bash
-trivy image flask-app
-```
-
-For stricter CI enforcement:
-
-```bash
-trivy image \
-  --severity HIGH,CRITICAL \
-  --exit-code 1 \
-  flask-app
-```
-
-The CI pipeline can fail when HIGH or CRITICAL vulnerabilities are detected.
-
----
-
-# 🧪 Testing
-
-Application testing includes:
-
-### Application availability
-
-```bash
-curl http://localhost:5000/
-```
-
-### Database connectivity
-
-```bash
-curl http://localhost:5000/data
-```
-
-### Container health
-
-```bash
-podman ps
-```
-
-### Logs
-
-```bash
-podman logs <container>
-```
-
-### Resource usage
-
-```bash
-podman stats
-```
-
-### Database recovery
-
-```bash
-podman-compose stop db
-podman-compose start db
-```
-
-Then:
-
-```bash
-curl http://localhost:5000/data
-```
-
----
-
-# 🛠️ Troubleshooting
-
-Common scenarios covered by this project include:
-
-### Container won't start
-
-```bash
-podman ps -a
-podman logs <container>
-```
-
-### Database isn't ready
-
-```bash
-podman exec <db-container> pg_isready -U postgres
-```
-
-### Port conflict
-
-```bash
-sudo ss -tulnp | grep 5000
-```
-
-### Inspect container configuration
-
-```bash
-podman inspect <container>
-```
-
-### Check resource usage
-
-```bash
-podman stats
-```
-
-### Inspect network
-
-```bash
-podman network ls
-podman network inspect <network>
-```
-
----
-
-# 🔄 Recovery Scenario
-
-The project includes a database failure/recovery test.
-
-```text
-              Normal Operation
-                     │
-                     ▼
-                Flask API
-                     │
-                     ▼
-                PostgreSQL
-                     │
-                     X
-                DB stopped
-                     │
-                     ▼
-             Connection failure
-                     │
-                     ▼
-               DB restarted
-                     │
-                     ▼
-             Healthcheck passes
-                     │
-                     ▼
-              Flask reconnects
-                     │
-                     ▼
-             Service recovered
-```
-
-This demonstrates that the deployment isn't only tested under ideal conditions.
-
----
-
-# 🔐 Container Hardening
-
-The application container follows several security principles:
-
-- Run as a non-root user
-- Use a minimal base image
-- Avoid unnecessary packages
-- Do not embed secrets in the image
-- Scan dependencies
-- Limit container resources
-- Keep database traffic on an internal network
-- Expose only required ports
-- Keep runtime configuration outside the image
-
----
-
-# 📈 Observability
-
-The project uses Podman operational tooling:
-
-```bash
-podman logs
-podman events
-podman stats
-podman inspect
-```
-
-These provide:
-
-- Application logs
-- Container lifecycle events
-- CPU/memory usage
-- Network information
-- Process state
-- Exit codes
-- Configuration metadata
-
-Future monitoring can integrate:
-
-```text
-Prometheus → Grafana
-       │
-       └── Container/application metrics
-
-Podman Logs → Elasticsearch → Kibana
-       │
-       └── Centralized log analysis
-```
-
----
-
-# ⚙️ Deployment
-
-The complete application can be deployed using:
+Start the application:
 
 ```bash
 podman-compose -f compose/podman-compose.yml up -d
 ```
 
-Verify:
+Check containers:
 
 ```bash
-podman-compose -f compose/podman-compose.yml ps
+podman ps
 ```
 
 Check logs:
@@ -549,127 +576,392 @@ Check logs:
 podman-compose -f compose/podman-compose.yml logs
 ```
 
+Test:
+
+```bash
+curl http://localhost:5001/health
+curl http://localhost:5001/ready
+```
+
 Stop the deployment:
 
 ```bash
 podman-compose -f compose/podman-compose.yml down
 ```
 
----
+### Current local port
 
-# 🔄 CI/CD Roadmap
+The Flask container listens on port `5000`.
 
-The GitHub Actions pipeline will eventually perform:
+The current Compose deployment maps:
 
 ```text
-Git Push
-   │
-   ▼
-Lint
-   │
-   ▼
-Unit Tests
-   │
-   ▼
-Container Build
-   │
-   ▼
-Trivy Scan
-   │
-   ▼
-Security Gate
-   │
-   ▼
-Image Tag
-   │
-   ▼
-Image Signing
-   │
-   ▼
-Release
+Host 5001 → Container 5000
 ```
 
-Planned automation includes:
+Port `5001` is used because the local OCI registry used for image-signing exercises occupies host port `5000`.
 
-- Python tests
-- Container build validation
-- Trivy vulnerability scanning
-- SBOM generation
-- Containerfile linting
-- Security policy checks
+---
+
+# 📊 Resource Management
+
+The web container is configured with:
+
+```yaml
+mem_limit: 256m
+cpus: 0.5
+```
+
+Inspect:
+
+```bash
+podman stats --no-stream compose_web_1
+```
+
+Inspect configured limits:
+
+```bash
+podman inspect compose_web_1 \
+  --format 'Memory={{.HostConfig.Memory}} CPUs={{.HostConfig.NanoCpus}}'
+```
+
+Expected:
+
+```text
+Memory=268435456
+CPUs=500000000
+```
+
+---
+
+# 🔧 Troubleshooting and Engineering Lessons
+
+This project included real troubleshooting rather than only successful commands.
+
+Problems investigated during development included:
+
+- Rootless Podman image visibility to Trivy
+- CI test-image dependency
+- Local registry and host-port conflicts
+- Podman network recreation
+- Container-to-container PostgreSQL connectivity
+- Health/readiness behavior
+- Resource-limit verification
+- Runtime security option verification
+- Compose feature compatibility
+
+### Important lesson: verify generated runtime configuration
+
+A Compose file can contain a setting without the installed Compose implementation actually translating it into the runtime command.
+
+For example, `pids_limit` was tested but `podman-compose 1.0.6` did not generate the corresponding Podman option. The setting was therefore removed instead of being falsely documented as active.
+
+This is an intentional engineering decision:
+
+> **Only claim a security control after verifying it at runtime.**
+
+---
+
+# 📈 Operational Observability
+
+Podman provides useful operational information through:
+
+```bash
+podman logs compose_web_1
+podman events
+podman stats
+podman inspect compose_web_1
+```
+
+These support:
+
+- Application log inspection
+- Container lifecycle investigation
+- CPU/memory monitoring
+- Runtime configuration verification
+- Troubleshooting
+- Incident investigation
+
+Future projects can extend this into:
+
+```text
+Prometheus → Grafana
+       │
+       └── Metrics
+
+Podman Logs → Elasticsearch → Kibana
+       │
+       └── Centralized Logs
+```
+
+Those are **future extensions**, not claimed as part of the current implementation.
+
+---
+
+# 🔄 Recovery Testing
+
+The deployment is designed to tolerate PostgreSQL interruptions.
+
+Example recovery workflow:
+
+```bash
+podman-compose -f compose/podman-compose.yml stop db
+```
+
+Check application behavior:
+
+```bash
+curl http://localhost:5001/ready
+```
+
+The readiness endpoint should report that the database is unavailable.
+
+Restart PostgreSQL:
+
+```bash
+podman-compose -f compose/podman-compose.yml start db
+```
+
+Wait for health:
+
+```bash
+podman ps
+```
+
+Then verify:
+
+```bash
+curl http://localhost:5001/ready
+```
+
+Expected:
+
+```json
+{
+  "database": "available",
+  "status": "ready"
+}
+```
+
+---
+
+# 🔄 CI/CD Pipeline
+
+GitHub Actions currently performs:
+
+```text
+Git Push / Pull Request
+          │
+          ▼
+     Checkout Code
+          │
+          ▼
+       Install Podman
+          │
+          ▼
+   Build Production Image
+          │
+          ▼
+      Build Test Image
+          │
+          ▼
+     Run pytest Tests
+          │
+          ▼
+       Install Trivy
+          │
+          ▼
+   Export Podman Image
+          │
+          ├──────────────► Trivy Vulnerability Scan
+          │
+          └──────────────► CycloneDX SBOM
+                                  │
+                                  ▼
+                         Upload CI Artifact
+```
+
+Workflow:
+
+```text
+.github/workflows/ci.yml
+```
+
+The workflow runs on:
+
+- Pushes to `main`
+- Pull requests targeting `main`
+
+The current CI pipeline has been successfully executed through the build, test, security scan, and SBOM stages.
+
+---
+
+# 🧰 Technology Stack
+
+| Layer | Technology |
+|---|---|
+| Application | Python 3.12 |
+| Web Framework | Flask 3.1.3 |
+| WSGI Server | Gunicorn 22.0.0 |
+| Database | PostgreSQL 15 |
+| Container Runtime | Podman 4.9.3 |
+| Compose | podman-compose 1.0.6 |
+| Networking | Podman bridge network |
+| Persistence | Podman named volume |
+| Secrets | Podman Secrets |
+| Testing | pytest |
+| Vulnerability Scanner | Trivy 0.75.0 |
+| SBOM | CycloneDX |
+| Image Signing | Cosign 3.1.3 |
+| CI/CD | GitHub Actions |
+| Host | Ubuntu Linux |
 
 ---
 
 # 📚 Engineering Concepts Demonstrated
 
-This project consolidates practical knowledge of:
+This project brings together practical skills in:
 
 - Linux container administration
 - Podman
-- Container image construction
+- Containerfile design
+- Python application packaging
+- Gunicorn
+- PostgreSQL
 - Container networking
-- PostgreSQL deployment
-- Persistent volumes
-- Secret management
+- Persistent storage
+- Runtime secret management
 - Non-root containers
-- Resource limits
-- Health checks
-- Service dependencies
-- Retry logic
-- Container troubleshooting
+- Linux capability management
+- `no-new-privileges`
+- Read-only filesystems
+- CPU and memory limits
+- Healthchecks
+- Readiness checks
+- Automated testing
 - Vulnerability management
-- Image security
-- Logging
+- SBOM generation
+- Container image signing
+- Digest verification
+- CI/CD
+- Troubleshooting
 - Recovery testing
 - Git/GitHub
-- CI/CD
 
 ---
 
 # 🎯 Project Outcomes
 
-The final system demonstrates the ability to:
+The project demonstrates the ability to:
 
-1. **Design** a containerized application architecture.
-2. **Build** secure application images.
-3. **Deploy** multiple services using Podman Compose.
+1. **Design** a multi-container application architecture.
+2. **Build** a production-style Flask container.
+3. **Deploy** Flask and PostgreSQL with Podman Compose.
 4. **Protect** credentials using runtime secrets.
-5. **Persist** database data using volumes.
-6. **Secure** containers using least privilege.
-7. **Detect** vulnerable dependencies.
-8. **Control** resource consumption.
-9. **Troubleshoot** networking and permissions.
-10. **Recover** services after failure.
-11. **Automate** security and testing through CI/CD.
+5. **Run** the application without root privileges.
+6. **Restrict** container capabilities.
+7. **Prevent** privilege escalation.
+8. **Make** the container filesystem read-only.
+9. **Limit** CPU and memory consumption.
+10. **Test** application behavior automatically.
+11. **Scan** container dependencies for vulnerabilities.
+12. **Generate** an SBOM.
+13. **Sign and verify** a container image.
+14. **Troubleshoot** container networking and runtime issues.
+15. **Automate** security checks through GitHub Actions.
+16. **Document** real engineering limitations rather than hiding them.
 
 ---
 
 # 🚧 Project Status
 
-**Status: In Development**
+**Status: Core implementation complete — final documentation and release validation in progress.**
 
 ### Completed
 
-- [x] Repository architecture
-- [x] Git configuration
-- [x] Podman environment
-- [x] Container security fundamentals
-- [x] Resource troubleshooting
-- [x] Network troubleshooting
-- [x] Permission troubleshooting
+- [x] Flask application
+- [x] PostgreSQL integration
+- [x] Podman containerization
+- [x] Podman Compose deployment
+- [x] Persistent database volume
+- [x] Runtime secret management
+- [x] Health endpoint
+- [x] Database readiness endpoint
+- [x] Automated pytest tests
+- [x] Non-root container
+- [x] CPU and memory limits
+- [x] `no-new-privileges`
+- [x] `CAP_DROP=ALL`
+- [x] Read-only root filesystem
+- [x] Trivy vulnerability scanning
+- [x] CycloneDX SBOM generation
+- [x] Cosign image signing
+- [x] Digest-based signature verification
+- [x] GitHub Actions CI
+- [x] Runtime troubleshooting
+- [x] Recovery testing
+- [x] Security hardening verification
 
-### In Progress
+### Intentionally Not Claimed
 
-- [ ] Flask application
-- [ ] PostgreSQL integration
-- [ ] Podman Compose deployment
-- [ ] Secret management
-- [ ] Health checks
-- [ ] Automated tests
-- [ ] Trivy security scanning
-- [ ] CI/CD pipeline
-- [ ] Recovery testing
-- [ ] Final architecture documentation
+- [ ] Production Kubernetes deployment
+- [ ] Production TLS registry
+- [ ] Keyless production signing
+- [ ] Prometheus/Grafana monitoring
+- [ ] Centralized Elasticsearch/Kibana logging
+- [ ] Runtime PID limit through current `podman-compose` implementation
+
+These belong to future project iterations rather than being presented as completed features.
+
+---
+
+# 🔮 Future Roadmap
+
+Possible future evolution:
+
+### Phase 2 — Container Security Pipeline
+
+```text
+Git
+ │
+ ▼
+Build
+ │
+ ├── Tests
+ ├── Trivy
+ ├── SBOM
+ ├── Policy Checks
+ └── Image Signing
+ │
+ ▼
+Trusted Registry
+ │
+ ▼
+Verified Deployment
+```
+
+### Phase 3 — Kubernetes Platform
+
+Move the application to:
+
+- Kubernetes
+- Helm
+- NetworkPolicies
+- Kubernetes Secrets
+- Pod Security
+- Resource Requests/Limits
+- Liveness/Readiness probes
+- Image signature verification
+
+### Phase 4 — Observability
+
+Add:
+
+- Prometheus
+- Grafana
+- Centralized logging
+- Alerting
+- Application metrics
 
 ---
 
@@ -683,12 +975,38 @@ GitHub: [@mubashir251-tech](https://github.com/mubashir251-tech)
 
 ---
 
-## ⭐ Why This Project Matters
+# ⭐ Why This Project Matters
 
-This repository is designed to demonstrate **practical engineering and security problem-solving**, rather than simply showing completion of container tutorials.
+This repository is designed to demonstrate **practical engineering and security problem-solving**, not simply completion of container tutorials.
 
-The implementation connects:
+The project connects:
 
-**Application Development → Containers → Networking → Security → Operations → Troubleshooting → Recovery → CI/CD**
+```text
+Application Development
+        │
+        ▼
+Containers
+        │
+        ▼
+Networking
+        │
+        ▼
+Security
+        │
+        ▼
+Testing
+        │
+        ▼
+Supply-Chain Security
+        │
+        ▼
+CI/CD
+        │
+        ▼
+Operations & Troubleshooting
+        │
+        ▼
+Recovery
+```
 
-into one reproducible deployment pattern.
+The result is a reproducible, security-focused microservice platform that can serve as a foundation for the next stage of the user's container-security and Kubernetes learning path.

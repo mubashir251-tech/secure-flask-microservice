@@ -32,11 +32,18 @@ services:
       DB_USER: postgres
     secrets:
       - db_password
+    mem_limit: 256m
+    cpus: 0.5
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
     depends_on:
       db:
         condition: service_healthy
     ports:
-      - "5000:5000"
+      - "5001:5000"
     networks:
       - app-network
 

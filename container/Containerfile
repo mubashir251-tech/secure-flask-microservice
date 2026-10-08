@@ -10,7 +10,11 @@ RUN groupadd --system --gid 10001 appgroup \
 
 COPY app/requirements.txt .
 
-RUN pip install --no-cache-dir --upgrade "pip>=26.2.0" && pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade "pip>=26.2.0" \
+    && pip install --no-cache-dir -r requirements.txt \
+    && rm -rf /root/.cache/pip \
+    && rm -rf /usr/local/lib/python3.12/site-packages/pip \
+    && rm -rf /usr/local/lib/python3.12/site-packages/pip-*.dist-info
 
 COPY app/ .
 

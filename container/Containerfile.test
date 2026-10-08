@@ -5,8 +5,10 @@ USER root
 
 COPY tests/requirements.txt /tmp/test-requirements.txt
 
-RUN pip install --no-cache-dir -r /tmp/test-requirements.txt \
-    && rm -f /tmp/test-requirements.txt
+RUN python -m ensurepip --upgrade \
+    && python -m pip install --no-cache-dir -r /tmp/test-requirements.txt \
+    && rm -f /tmp/test-requirements.txt \
+    && rm -rf /root/.cache/pip
 
 ENV PYTHONPATH=/app
 
