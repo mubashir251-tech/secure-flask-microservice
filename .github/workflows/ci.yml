@@ -61,6 +61,13 @@ jobs:
             -o secure-flask-microservice.tar \
             localhost/secure-flask-microservice:ci
 
+      - name: Generate SBOM
+        run: |
+          trivy image \
+            --input secure-flask-microservice.tar \
+            --format cyclonedx \
+            --output sbom.cdx.json
+
       - name: Trivy vulnerability scan
         run: |
           trivy image \
@@ -68,3 +75,10 @@ jobs:
             --scanners vuln \
             --severity HIGH,CRITICAL \
             --ignore-unfixed
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: secure-flask-microservice-sbom
+          path: sbom.cdx.json
+          if-no-files-found: error
