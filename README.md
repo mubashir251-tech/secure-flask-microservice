@@ -402,7 +402,7 @@ trivy image \
 
 The final production image was scanned with Trivy using HIGH and CRITICAL severity levels with unfixed vulnerabilities ignored.
 
-**Result: 0 HIGH/CRITICAL vulnerabilities detected.**
+**Result: 0 HIGH/CRITICAL vulnerabilities detected** with `--ignore-unfixed` enabled. This result applies to the scanned image and Trivy's available vulnerability data at the time of the scan; it is not a guarantee that the image has no vulnerabilities.
 
 The final scan covered:
 
@@ -455,7 +455,25 @@ Verification is performed using the public key.
 
 ### Strong verification model
 
-The project also verifies the image using its immutable digest rather than relying only on a mutable tag.
+The final hardened image was pushed to the local OCI registry and signed with Cosign. Verification was performed against the immutable digest rather than relying only on a mutable tag.
+
+**Final verified image digest:**
+
+```text
+sha256:e3986224595567d92901cdd4e417a2a15d5af1d530238f7ad9612487338bd645
+```
+
+#### Final verification evidence
+
+| Check | Result |
+|---|---|
+| Sign the final hardened image with Cosign | Passed |
+| Verify with the corresponding public key | Passed |
+| Validate the digest and Cosign claims | Passed |
+| Attempt verification with an unrelated public key | Rejected |
+| Keep the private signing key outside the repository | Maintained |
+
+The unrelated-key attempt was rejected with a transparency-log certificate mismatch. This demonstrates rejection in that verification flow; it should not be presented as an isolated test of every possible signature-validation failure.
 
 Conceptually:
 
@@ -477,7 +495,9 @@ Public-Key Verification
 
 ### Important limitation
 
-The current signing setup is a **local security demonstration**, not a production trust architecture.
+The current signing setup is a **local security demonstration**, not a production trust architecture. The registry uses HTTP with TLS verification disabled for this lab.
+
+A valid signature binds the signing identity to the signed image digest; it does not, by itself, prove that the image is vulnerability-free or safe to deploy.
 
 Production deployment should move toward:
 
@@ -875,7 +895,7 @@ The project demonstrates the ability to:
 
 # 🚧 Project Status
 
-**Status: Core implementation complete — final documentation and release validation in progress.**
+**Status: Core implementation and local lab validation complete. Production trust enhancements and Kubernetes deployment remain future work.**
 
 ### Completed
 
