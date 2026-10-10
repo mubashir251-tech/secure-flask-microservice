@@ -893,6 +893,97 @@ The project demonstrates the ability to:
 
 ---
 
+## Release Validation
+
+The Secure Flask Microservice has undergone local release validation covering CI, image integrity, application functionality, database connectivity, and container runtime security.
+
+### 1. CI and Repository Validation
+
+| Check | Result |
+|---|---|
+| GitHub Actions workflow for commit `3c35f96` | Passed |
+| Git working tree | Clean |
+| Local `main` and `origin/main` | Synchronized |
+| Application test suite | 5 tests passed |
+
+### 2. Container Image Integrity
+
+The hardened container image was published to a local OCI registry and signed using Cosign.
+
+| Check | Result |
+|---|---|
+| Registry API availability | Passed |
+| Registry manifest digest | Matched the previously signed digest |
+| Cosign signature verification | Passed |
+| Public-key verification | Passed |
+| Signature claims validation | Passed |
+| Transparency log inclusion verification | Passed |
+
+**Verified image digest:**
+
+`sha256:e3986224595567d92901cdd4e417a2a15d5af1d530238f7ad9612487338bd645`
+
+The digest identifies the exact image manifest verified during this validation. The signature establishes a verifiable relationship between the image digest and the signing key; it does not independently establish that the image is vulnerability-free or safe.
+
+### 3. Application and Database Validation
+
+The running application was tested through its HTTP endpoints.
+
+| Endpoint | Observed result |
+|---|---|
+| `/` | HTTP 200 OK |
+| `/health` | HTTP 200 OK |
+| `/ready` | HTTP 200 OK; database available |
+| `/data` | HTTP 200 OK; PostgreSQL version returned |
+| `/users` | HTTP 200 OK; user records returned |
+
+The PostgreSQL container reported a healthy status, and the application successfully retrieved database records.
+
+### 4. Container Runtime Security
+
+Runtime inspection confirmed the following controls on the web container:
+
+| Control | Observed configuration |
+|---|---|
+| Container identity | UID/GID `10001:10001` |
+| Root filesystem | Read-only |
+| Linux capabilities | Effective, permitted, inheritable, and bounding sets were zero |
+| `no-new-privileges` | Enabled |
+| Memory limit | 256 MiB |
+| CPU limit | 0.5 CPU |
+| Database password environment variable | Not present in the web process environment |
+
+These results document the configuration observed during the lab validation. They do not replace broader security testing or production deployment checks.
+
+### 5. Vulnerability Scanning and SBOM
+
+The hardened image was scanned using Trivy with the following options:
+
+- Scanners: vulnerabilities
+- Severity threshold: HIGH and CRITICAL
+- Unfixed vulnerabilities: ignored
+- Result: 0 HIGH/CRITICAL vulnerabilities detected under the configured scan options
+
+A CycloneDX Software Bill of Materials (SBOM) was also generated and uploaded as a CI artifact.
+
+Scan results depend on the image version, scanner configuration, and vulnerability database available at scan time. The result does not mean the image contains no vulnerabilities.
+
+### 6. Known Limitations and Production Follow-Up
+
+The following items remain before a production deployment:
+
+- **Secret permissions:** The database secret is mounted inside the web container with mode `0444`, making it readable by all users in that container. Investigate a supported least-privilege secret-mount configuration.
+- **Registry transport:** The local lab registry uses HTTP with TLS verification disabled for the signing workflow. Use authenticated TLS for production.
+- **Signing trust:** Protect signing keys and enforce signature verification at deployment time. Consider an appropriate CI-controlled or keyless signing workflow.
+- **Deployment validation:** Test the deployment environment, monitoring, logging, recovery, and security policies before production use.
+- **Ongoing scanning:** Rebuild and rescan images as dependencies and vulnerability intelligence change.
+
+### Validation Status
+
+**Status: Lab-validated; production hardening remains in progress.**
+
+This project demonstrates container hardening, automated testing, vulnerability scanning, SBOM generation, image signing, and signature verification in a reproducible lab environment.
+
 # 🚧 Project Status
 
 **Status: Core implementation and local lab validation complete. Production trust enhancements and Kubernetes deployment remain future work.**
